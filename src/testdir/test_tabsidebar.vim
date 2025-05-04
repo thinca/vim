@@ -160,6 +160,37 @@ function! Test_tabsidebar_drawing()
   call StopVimInTerminal(buf)
 endfunc
 
+function! Test_tabsidebar_drawing_outlier()
+  CheckScreendump
+
+  let lines =<< trim END
+    let g:MyTabsidebar1 = "\n%f"
+    let g:MyTabsidebar2 = repeat("X", 1030)
+
+    set showtabline=0
+    set showtabsidebar=2
+    set tabsidebarcolumns=16
+    set tabsidebarwrap
+    set tabsidebar=
+    silent edit Xtabsidebar1
+    silent tabnew Xtabsidebar2
+
+    nnoremap \01 <Cmd>let &tabsidebar = g:MyTabsidebar1<CR>
+    nnoremap \02 <Cmd>let &tabsidebar = g:MyTabsidebar2<CR>
+  END
+  call writefile(lines, 'XTest_tabsidebar', 'D')
+
+  let buf = RunVimInTerminal('-S XTest_tabsidebar', {'rows': 6, 'cols': 45})
+
+  for i in range(1, 2)
+    let n = printf('%02d', i)
+    call term_sendkeys(buf, '\' .. n)
+    call VerifyScreenDump(buf, 'Test_tabsdebar_drawing_outlier_' .. n, {})
+  endfor
+
+  call StopVimInTerminal(buf)
+endfunc
+
 function! Test_tabsidebar_drawing_with_popupwin()
   CheckScreendump
 
