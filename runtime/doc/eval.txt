@@ -917,6 +917,23 @@ remaining that refers to it.
 
 It is not necessary to use the "dict" attribute for a numbered function.
 
+Naming the dictionary entry ~
+						*dictionary-function-name*
+The part after the dictionary name is formed like indexing that dictionary
+(see "Accessing entries" under |Dictionary| above): either a dot and an
+identifier (`dict.func`), or square brackets around an expression.
+With brackets, the expression is evaluated when the `:function` command is
+executed, producing the key string, like `dict[expr]` elsewhere (|expr-[]|).
+Examples: >
+	:function adict['with-dash']() dict
+	:   return len(self.data)
+	:endfunction
+	:function adict[key .. '_tail']() dict
+	:   return len(self.data)
+	:endfunction
+<
+In the second case `key` must exist when the `:function` line is executed.
+
 If you get an error for a numbered function, you can find out what it is with
 a trick.  Assuming the function is 42, the command is: >
 	:function g:42

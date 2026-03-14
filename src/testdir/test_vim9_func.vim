@@ -115,14 +115,6 @@ def Test_wrong_function_name()
 
   lines =<< trim END
       vim9script
-      var Object = {}
-      def Object.Method()
-      enddef
-  END
-  v9.CheckScriptFailure(lines, 'E1182:')
-
-  lines =<< trim END
-      vim9script
       g:Object = {}
       function g:Object.Method()
       endfunction
@@ -134,17 +126,6 @@ def Test_wrong_function_name()
       def Define()
         function s:Object.Method()
         endfunction
-      enddef
-      defcompile
-  END
-  v9.CheckScriptFailure(lines, 'E1182:')
-  delfunc g:Define
-
-  lines =<< trim END
-      let s:Object = {}
-      def Define()
-        def Object.Method()
-        enddef
       enddef
       defcompile
   END
@@ -5037,6 +5018,241 @@ def Test_void_method_chain()
     TestFunc()
   END
   v9.CheckScriptFailure(lines, 'E1186: Expression does not result in a value: bufload(')
+enddef
+
+def Test_def_dict_funcref_sugar()
+  # Dot notation: funcref stored, call, lowercase/callback-style name, typed
+  # return, two methods on one dict.
+  var lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.Hello()
+        g:def_dict_result = 'hello'
+      enddef
+      def d.out_cb(msg: string)
+        g:def_dict_result = msg
+      enddef
+      def d.add(a: number, b: number): number
+        return a + b
+      enddef
+      def d.twice(n: number): number
+        return n * 2
+      enddef
+      assert_equal(v:t_func, type(d.Hello))
+      d.Hello()
+      assert_equal('hello', g:def_dict_result)
+      d.out_cb('from callback')
+      assert_equal('from callback', g:def_dict_result)
+      assert_equal(5, d.add(2, 3))
+      assert_equal(10, d.twice(5))
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Bracket [expr]: variable, call, and ".." — not string-literal-only parsing.
+  lines =<< trim END
+      vim9script
+      var keyname = 'handler'
+      var d: dict<any> = {}
+      def d[keyname]()
+        g:def_dict_result = 'var key'
+      enddef
+      def d[toupper('ab')]()
+        g:def_dict_up = 'call expr key'
+      enddef
+      def d['foo' .. 'bar']()
+        g:def_dict_cat = 'concat key'
+      enddef
+      assert_equal(v:t_func, type(d.handler))
+      d.handler()
+      d.AB()
+      d.foobar()
+      assert_equal('var key', g:def_dict_result)
+      assert_equal('call expr key', g:def_dict_up)
+      assert_equal('concat key', g:def_dict_cat)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Nested: dot + bracket [expr] in one outer :def.
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var prefix = 'cb'
+        var d: dict<any> = {}
+        def d.inner()
+          g:def_dict_nested = 'dot nested'
+        enddef
+        def d[prefix .. '_hook']()
+          g:def_dict_dyn = 'expr key nested'
+        enddef
+        d.inner()
+        d.cb_hook()
+      enddef
+      Outer()
+      assert_equal('dot nested', g:def_dict_nested)
+      assert_equal('expr key nested', g:def_dict_dyn)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {value: 42}
+      def d.method()
+        echo self.value
+      enddef
+      d.method()
+  END
+  v9.CheckScriptFailure(lines, 'E1001:')
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      function d.method()
+      endfunction
+  END
+  v9.CheckScriptFailure(lines, 'E1182:')
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d[key]()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E121:')
+
+  # Closure: capture outer variable
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var captured = 'captured value'
+        var d: dict<any> = {}
+        def d.callback()
+          g:def_dict_closure = captured
+        enddef
+        d.callback()
+      enddef
+      Outer()
+      assert_equal('captured value', g:def_dict_closure)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Overwrite existing dict entry
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {greet: 'old'}
+      def d.greet()
+        g:def_dict_result = 'new'
+      enddef
+      assert_equal(v:t_func, type(d.greet))
+      d.greet()
+      assert_equal('new', g:def_dict_result)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # :call must parse dict member funcref like an expression, not a declaration.
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.DotKey()
+        g:def_dict_call = 'dot'
+      enddef
+      def d['spa ce']()
+        g:def_dict_call = 'space'
+      enddef
+      call d.DotKey()
+      assert_equal('dot', g:def_dict_call)
+      call d['spa ce']()
+      assert_equal('space', g:def_dict_call)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Nested :def dict member on a g: dictionary (not only local/script-local).
+  lines =<< trim END
+      vim9script
+      g:d9_outer_dict = {}
+      def OuterGdict()
+        def g:d9_outer_dict.cb()
+          g:d9_bracket_gdict = 'ok'
+        enddef
+        g:d9_outer_dict.cb()
+      enddef
+      OuterGdict()
+      assert_equal('ok', g:d9_bracket_gdict)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Whitespace before ']' in def dict[expr]() (compile_expr0 vs. skip_expr positions).
+  lines =<< trim END
+      vim9script
+      def OuterBracketSpace()
+        var idx = 'k'
+        var d: dict<any> = {}
+        def d[ idx ]()
+          g:d9_bracket_ws = 'spaces'
+        enddef
+        d.k()
+      enddef
+      OuterBracketSpace()
+      assert_equal('spaces', g:d9_bracket_ws)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Reject empty key after '.' (e.g. def d.()); get_lval reports E713 (see eval.c).
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E713:')
+
+  # Generic parameters after dict member name: def d.key<T>().
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var d: dict<any> = {}
+        def d.entry<T>(x: T): T
+          return x
+        enddef
+        assert_equal(42, d.entry(42))
+      enddef
+      Outer()
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var d: dict<any> = {}
+        def d['k']<T>(x: T): T
+          return x
+        enddef
+        assert_equal('z', d.k('z'))
+      enddef
+      Outer()
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Error: undefined variable
+  lines =<< trim END
+      vim9script
+      def nonexistent.key()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E121:')
+
+  # defcompile with def dict.key()
+  lines =<< trim END
+      let s:obj = {}
+      def Define()
+        def obj.func()
+          g:def_dict_defcompile = 'compiled'
+        enddef
+        obj.func()
+      enddef
+      defcompile
+  END
+  v9.CheckScriptSuccess(lines)
+  delfunc g:Define
 enddef
 
 " vim: ts=8 sw=2 sts=2 expandtab tw=80 fdm=marker
