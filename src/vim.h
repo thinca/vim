@@ -2923,6 +2923,7 @@ typedef int (*opt_expand_cb_T)(optexpand_T *args, int *numMatches, char_u ***mat
 #define TFN_NEW_FUNC	0x80	// defining a new function
 #define TFN_ASSIGN_WITH_OP 0x100  // only for GLV_ASSIGN_WITH_OP
 #define TFN_IN_CLASS	0x200	// function in a class
+#define TFN_DICT_DEF	0x400	// defining dict function with :def
 
 // Values for get_lval() flags argument:
 #define GLV_QUIET	TFN_QUIET	// no error messages
