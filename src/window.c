@@ -4784,6 +4784,9 @@ free_tabpage(tabpage_T *tp)
 
     if (tp == lastused_tabpage)
 	lastused_tabpage = NULL;
+#ifdef FEAT_TABPANEL
+    tabpanel_forget_tabpage(tp);
+#endif
 
     vim_free(tp->tp_localdir);
     vim_free(tp->tp_prevdir);
@@ -7588,6 +7591,7 @@ command_height(void)
     }
     if (p_ch < old_p_ch && command_frame_height && frp != NULL)
 	frame_add_height(frp, (int)(old_p_ch - p_ch));
+    win_fix_scroll(true);
 
     // Recompute window positions.
     win_comp_pos();

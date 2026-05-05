@@ -593,6 +593,12 @@ func Test_set_completion_string_values()
   if exists('+tabclose')
     call assert_equal('left uselast', join(sort(getcompletion('set tabclose=', 'cmdline'))), ' ')
   endif
+  if has('tabpanel')
+    call assert_equal(['align:', 'columns:', 'scrollbar', 'vert'],
+          \ getcompletion('set tabpanelopt=', 'cmdline'))
+    call assert_equal(['left', 'right'],
+          \ getcompletion('set tabpanelopt=align:', 'cmdline'))
+  endif
   if exists('+termwintype')
     call assert_equal('conpty', getcompletion('set termwintype=', 'cmdline')[1])
   endif
@@ -657,6 +663,22 @@ func Test_set_completion_string_values()
   call feedkeys(":set completepopup=height:10,align:\<Tab>\<C-B>\"\<CR>", 'xt')
   call assert_equal('"set completepopup=height:10,align:item', @:)
   call assert_equal([], getcompletion('set completepopup=bogusname:', 'cmdline'))
+
+  " opacity: numeric, 0..100 only
+  call assert_true(index(getcompletion('set completepopup=', 'cmdline'),
+        \ 'opacity:') >= 0)
+  call assert_true(index(getcompletion('set previewpopup=', 'cmdline'),
+        \ 'opacity:') >= 0)
+  set completepopup=border:on,opacity:0
+  set completepopup=border:on,opacity:50
+  set completepopup=border:on,opacity:100
+  call assert_fails('set completepopup=opacity:101', 'E474:')
+  call assert_fails('set completepopup=opacity:abc', 'E474:')
+  call assert_fails('set completepopup=opacity:-10', 'E474:')
+  set previewpopup=opacity:30
+  call assert_fails('set previewpopup=opacity:200', 'E474:')
+  call assert_fails('set previewpopup=opacity:-10', 'E474:')
+
   set previewpopup& completepopup&
 
   " diffopt: special handling of algorithm:<alg_list> and inline:<inline_type>
@@ -1185,7 +1207,7 @@ func Test_backupskip()
       qall
   [CODE]
   call writefile(after, 'Xafter', 'D')
-  let cmd = GetVimProg() . ' --not-a-term -S Xafter --cmd "set enc=utf8"'
+  let cmd = GetVimProg() . ' --clean --not-a-term -S Xafter --cmd "set enc=utf8"'
 
   let saveenv = {}
   for var in ['TMPDIR', 'TMP', 'TEMP']
@@ -1193,9 +1215,9 @@ func Test_backupskip()
     call setenv(var, '/duplicate/path')
   endfor
 
-  " unset $HOME, so that it won't try to read init files
+  " set $HOME='', so that Vim won't try to read init files
   let saveenv['HOME'] = getenv("HOME")
-  call setenv('HOME', v:null)
+  call setenv('HOME', '')
   exe 'silent !' . cmd
   call assert_equal(['errors:'], readfile('Xtestout'))
 
@@ -1428,7 +1450,7 @@ func Test_shortmess_F3()
   if has('nanotime')
     sleep 10m
   else
-    sleep 2
+    sleep 3
   endif
   call writefile(['bar'], 'X_dummy')
   bprev
@@ -1438,7 +1460,7 @@ func Test_shortmess_F3()
   if has('nanotime')
     sleep 10m
   else
-    sleep 2
+    sleep 3
   endif
   call writefile(['baz'], 'X_dummy')
   checktime

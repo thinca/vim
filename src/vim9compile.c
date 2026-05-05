@@ -1037,6 +1037,15 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
     int		funcref_isn_idx = -1;
     lvar_T	*lvar = NULL;
     char_u	*bracket_start = NULL;
+    char_u	*dict_end = NULL;
+    char_u	*key_start = NULL;
+    char_u	*key_end = NULL;
+    char_u	*dict_key_expr_close = NULL;  // "def d[expr]()": ']' after expr
+    char_u	*dict_arg_copy = NULL;
+    size_t	dict_end_off = 0;
+    size_t	key_start_off = 0;
+    size_t	key_end_off = 0;
+    ptrdiff_t	dict_kexpr_close_off = -1;
 
     if (eap->forceit)
     {
@@ -1064,18 +1073,101 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
     {
 	if (!ends_excmd2(name_start, name_end))
 	{
-	    if (*skipwhite(name_end) == '.')
-		semsg(_(e_cannot_define_dict_func_in_vim9_script_str),
+	    // Require '.' or '[' immediately after the dict expression token, like
+	    // find_name_end() for indexing — not "def d .key()" with whitespace.
+	    if (*name_end == '.' || *name_end == '[')
+	    {
+		if (eap->cmdidx != CMD_def)
+		{
+		    semsg(_(e_cannot_define_dict_func_in_vim9_script_str),
 								     eap->cmd);
-	    else
-		semsg(_(e_invalid_command_str), eap->cmd);
-	    return NULL;
-	}
+		    return NULL;
+		}
+		dict_end = name_end;
+		if (*name_end == '.')
+		{
+		    // "def dict.key()": advance past ".key".
+		    key_start = name_end + 1;
+		    name_end = to_name_end(key_start, TRUE);
+		    key_end = name_end;
+		    if (key_end == key_start)
+		    {
+			semsg(_(e_invalid_command_str), eap->cmd);
+			return NULL;
+		    }
+		}
+		else
+		{
+		    // "def dict['key']()" or "def dict[expr]()": parse the key as an
+		    // expression (|dictionary-function-name|), including string
+		    // literals with "..", escaped quotes, etc.
+		    char_u *p = name_end + 1;  // past '['
+		    char_u *expr_start = skipwhite(p);
+		    char_u *expr_end = expr_start;
 
-	// "def" or "def Name": list functions
-	if (generate_DEF(cctx, name_start, name_end - name_start) == FAIL)
-	    return NULL;
-	return eap->nextcmd == NULL ? (char_u *)"" : eap->nextcmd;
+		    if (*expr_start == NUL
+				|| skip_expr(&expr_end, NULL) == FAIL)
+		    {
+			semsg(_(e_invalid_command_str), eap->cmd);
+			return NULL;
+		    }
+		    expr_end = skipwhite(expr_end);
+		    if (*expr_end != ']')
+		    {
+			emsg(_(e_missing_closing_square_brace));
+			return NULL;
+		    }
+		    key_start = expr_start;
+		    dict_key_expr_close = expr_end;
+		    p = skipwhite(expr_end + 1);
+		    if (*p == '<')
+		    {
+			bracket_start = p;
+			if (skip_generic_func_type_args(&p) == FAIL)
+			    return NULL;
+		    }
+		    {
+			char_u *q = skipwhite(p);
+
+			if (*q != '(')
+			{
+			    semsg(_(e_invalid_command_str), eap->cmd);
+			    return NULL;
+			}
+			name_end = q;
+		    }
+		}
+		// Optional generic type parameters before '(' (e.g. def d.key<T>()).
+		{
+		    char_u *pa = skipwhite(name_end);
+
+		    if (*pa == '<')
+		    {
+			bracket_start = pa;
+			if (skip_generic_func_type_args(&pa) == FAIL)
+			    return NULL;
+			name_end = pa;
+		    }
+		    if (*skipwhite(name_end) != '(')
+		    {
+			semsg(_(e_invalid_command_str), eap->cmd);
+			return NULL;
+		    }
+		}
+	    }
+	    else
+	    {
+		semsg(_(e_invalid_command_str), eap->cmd);
+		return NULL;
+	    }
+	}
+	else
+	{
+	    // "def" or "def Name": list functions
+	    if (generate_DEF(cctx, name_start, name_end - name_start) == FAIL)
+		return NULL;
+	    return eap->nextcmd == NULL ? (char_u *)"" : eap->nextcmd;
+	}
     }
 
     if (bracket_start != NULL)
@@ -1083,20 +1175,23 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
 	// (opening angle bracket).
 	name_end = bracket_start;
 
-    // Only g:Func() can use a namespace.
-    if (name_start[1] == ':' && !is_global)
+    if (dict_end == NULL)
     {
-	semsg(_(e_namespace_not_supported_str), name_start);
-	return NULL;
-    }
-    if (cctx->ctx_skip != SKIP_YES
-	    && check_defined(name_start, name_end - name_start, cctx,
+	// Only g:Func() can use a namespace.
+	if (name_start[1] == ':' && !is_global)
+	{
+	    semsg(_(e_namespace_not_supported_str), name_start);
+	    return NULL;
+	}
+	if (cctx->ctx_skip != SKIP_YES
+		&& check_defined(name_start, name_end - name_start, cctx,
 							  NULL, FALSE) == FAIL)
-	return NULL;
-    if (!ASCII_ISUPPER(is_global ? name_start[2] : name_start[0]))
-    {
-	semsg(_(e_function_name_must_start_with_capital_str), name_start);
-	return NULL;
+	    return NULL;
+	if (!ASCII_ISUPPER(is_global ? name_start[2] : name_start[0]))
+	{
+	    semsg(_(e_function_name_must_start_with_capital_str), name_start);
+	    return NULL;
+	}
     }
 
     eap->arg = name_end;
@@ -1116,6 +1211,26 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
     {
 	r = FAIL;
 	goto theend;
+    }
+
+    // define_function() may fetch more lines and invalidate pointers into the
+    // first line (see define_function() before get_function_args()).  Copy
+    // the dict header span before calling it.
+    if (dict_end != NULL)
+    {
+	dict_end_off = (size_t)(dict_end - name_start);
+	key_start_off = (size_t)(key_start - name_start);
+	if (dict_key_expr_close != NULL)
+	    dict_kexpr_close_off = dict_key_expr_close - name_start;
+	else
+	    // Dot form only: bracket form does not set key_end.
+	    key_end_off = (size_t)(key_end - name_start);
+	dict_arg_copy = vim_strnsave(name_start, name_end - name_start);
+	if (dict_arg_copy == NULL)
+	{
+	    r = FAIL;
+	    goto theend;
+	}
     }
 
     // Make sure "KeyTyped" is not set, it may cause indent to be written.
@@ -1157,7 +1272,81 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
 
     // Define the funcref before compiling, so that it is found by any
     // recursive call.
-    if (is_global)
+    if (dict_end != NULL)
+    {
+	char_u *dc_dict_end = dict_arg_copy + dict_end_off;
+	char_u *dc_key_start = dict_arg_copy + key_start_off;
+
+	// "def dict.key()", "def dict['key']()", or "def dict[expr]()":
+	// generate FUNCREF, then store it into the dict.
+	if (generate_FUNCREF(cctx, ufunc, NULL, FALSE, 0, &funcref_isn_idx)
+								       == FAIL)
+	    goto theend;
+
+	if (dict_kexpr_close_off >= 0)
+	{
+	    char_u *dc_kexpr_close = dict_arg_copy + dict_kexpr_close_off;
+	    char_u *wp = dc_key_start;
+	    int	    c = *dc_kexpr_close;
+
+	    *dc_kexpr_close = NUL;
+	    r = compile_expr0(&wp, cctx);
+	    *dc_kexpr_close = c;
+	    wp = skipwhite(wp);
+	    if (r == FAIL || wp != dc_kexpr_close)
+	    {
+		if (r != FAIL && wp != dc_kexpr_close)
+		    emsg(_(e_missing_closing_square_brace));
+		goto theend;
+	    }
+	    if (may_generate_2STRING(-1, TOSTRING_NONE, cctx) == FAIL)
+		goto theend;
+	}
+	else
+	{
+	    // "def dict.key()": push the key name as a string.
+	    char_u *key_name = vim_strnsave(dc_key_start,
+					       key_end_off - key_start_off);
+
+	    if (key_name == NULL)
+		goto theend;
+	    if (generate_PUSHS(cctx, &key_name) == FAIL)
+		goto theend;
+	}
+
+	// Compile loading the dict expression so that g:/b:/local/imported
+	// variables all resolve like normal expressions.
+	{
+	    char_u	save_c = *dc_dict_end;
+	    char_u	*wp = skipwhite(dict_arg_copy);
+
+	    *dc_dict_end = NUL;
+	    r = compile_expr0(&wp, cctx);
+	    *dc_dict_end = save_c;
+	    if (r == FAIL || wp != dc_dict_end)
+	    {
+		if (r != FAIL && wp != dc_dict_end)
+		    semsg(_(e_trailing_characters_str), wp);
+		goto theend;
+	    }
+	}
+
+	// Generate STOREINDEX.  Stack matches execute_storeindex(): the dict is
+	// on top (BOT(-1)), index BOT(-2), value BOT(-3).  Pushes are funcref,
+	// key, dict — last pushed is the dict.
+	isn_T *isn = generate_instr_drop(cctx, ISN_STOREINDEX, 3);
+	if (isn == NULL)
+	{
+	    r = FAIL;
+	    goto theend;
+	}
+	// VAR_ANY: dict expression may be |any| at compile time; runtime checks
+	// tv_dest->v_type in execute_storeindex() (see compile_assign_index).
+	isn->isn_arg.storeindex.si_vartype = VAR_ANY;
+	isn->isn_arg.storeindex.si_class = NULL;
+	r = OK;
+    }
+    else if (is_global)
     {
 	r = generate_NEWFUNC(cctx, lambda_name.string, func_name);
 	func_name = NULL;
@@ -1209,6 +1398,7 @@ compile_nested_function(exarg_T *eap, cctx_T *cctx, garray_T *lines_to_free)
     }
 
 theend:
+    vim_free(dict_arg_copy);
     vim_free(lambda_name.string);
     vim_free(func_name);
     return r == FAIL ? NULL : (char_u *)"";

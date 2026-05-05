@@ -2377,8 +2377,8 @@ EXTERN char e_using_job_as_number[]
 	INIT(= N_("E910: Using a Job as a Number"));
 EXTERN char e_using_job_as_float[]
 	INIT(= N_("E911: Using a Job as a Float"));
-EXTERN char e_cannot_use_evalexpr_sendexpr_with_raw_or_nl_channel[]
-	INIT(= N_("E912: Cannot use ch_evalexpr()/ch_sendexpr() with a raw or nl channel"));
+EXTERN char e_cannot_use_evalexpr_sendexpr_with_raw_nl_or_blob_channel[]
+	INIT(= N_("E912: Cannot use ch_evalexpr()/ch_sendexpr() with a raw, nl or blob channel"));
 EXTERN char e_using_channel_as_number[]
 	INIT(= N_("E913: Using a Channel as a Number"));
 EXTERN char e_using_channel_as_float[]
@@ -3809,3 +3809,5 @@ EXTERN char e_gethostbyname_in_channel_listen[]
 EXTERN char e_cannot_create_pipes[]
 	INIT(= N_("E1575: Cannot create pipes"));
 #endif
+EXTERN char e_tag_file_entry_must_not_be_url[]
+	INIT(= N_("E1576: Tag file entry must not be a URL"));

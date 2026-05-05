@@ -328,9 +328,12 @@ func Test_strptime()
 
   call assert_equal(1484653763, strptime('%Y-%m-%d %T', '2017-01-17 11:49:23'))
 
-  " Force DST and check that it's considered
-  let $TZ = 'WINTER0SUMMER,J1,J365'
-  call assert_equal(1484653763 - 3600, strptime('%Y-%m-%d %T', '2017-01-17 11:49:23'))
+  " Force DST and check that it's considered.
+  " MS-Windows CRT tzset() does not parse POSIX TZ strings with DST rules.
+  if !has('win32')
+    let $TZ = 'WINTER0SUMMER,J1,J365'
+    call assert_equal(1484653763 - 3600, strptime('%Y-%m-%d %T', '2017-01-17 11:49:23'))
+  endif
 
   call assert_fails('call strptime()', 'E119:')
   call assert_fails('call strptime("xxx")', 'E119:')
@@ -4624,6 +4627,43 @@ func Test_uriencoding()
     call assert_equal(cstr, uri_decode(expected))
   END
   call v9.CheckLegacyAndVim9Success(lines)
+endfunc
+
+" Note: legacy func, not vim9 def, to avoid the test file being vim9script
+func Test_vim9_def_fc_sandbox()
+  sandbox def! g:Bad()
+    system('echo unsafe')
+  enddef
+
+  call assert_fails('call g:Bad()', 'E48:')
+  delfunction g:Bad
+endfunc
+
+func Test_vim9_def_call_dfunc_fc_sandbox()
+  " Inner has FC_SANDBOX, outer does not.
+  " Calling outer goes through call_dfunc into inner, exercising
+  " the sandbox handling in call_dfunc and func_return.
+  sandbox def! g:Inner()
+    system('echo unsafe')
+  enddef
+
+  def! g:Outer()
+    g:Inner()
+  enddef
+
+  call assert_fails('call g:Outer()', 'E48:')
+  delfunction g:Inner
+  delfunction g:Outer
+endfunc
+
+" Deferred body inside a sandboxed def function must still run sandboxed.
+func Test_vim9_def_defer_fc_sandbox()
+  sandbox def! g:BadDefer()
+    defer system('echo unsafe')
+  enddef
+
+  call assert_fails('call g:BadDefer()', 'E48:')
+  delfunction g:BadDefer
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

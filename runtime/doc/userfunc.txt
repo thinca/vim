@@ -89,7 +89,9 @@ See |:verbose-cmd| for more information.
 			{name} can also be a |Dictionary| entry that is a
 			|Funcref|: >
 				:function dict.init(arg)
-<			"dict" must be an existing dictionary.  The entry
+<			For `dict[...]` instead of `dict.name` see
+			|dictionary-function-name|.
+			"dict" must be an existing dictionary.  The entry
 			"init" is added if it didn't exist yet.  Otherwise [!]
 			is required to overwrite an existing function.  The
 			result is a |Funcref| to a numbered function.  The

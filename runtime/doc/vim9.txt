@@ -1,4 +1,4 @@
-*vim9.txt*	For Vim version 9.2.  Last change: 2026 Feb 14
+*vim9.txt*	For Vim version 9.2.  Last change: 2026 May 04
 
 
 		  VIM REFERENCE MANUAL	  by Bram Moolenaar
@@ -271,7 +271,9 @@ created yet.  In this case you can call `execute()` to invoke it at runtime. >
 used for the command or the error was caught a `:try` block), does not get a
 range passed, cannot be a "dict" function, and can always be a closure.
 						*vim9-no-dict-function* *E1182*
-You can use a Vim9 Class (|Vim9-class|) instead of a "dict function".
+A `:def` function cannot be a legacy "dict function" that uses `self`.
+Use a Vim9 Class (|Vim9-class|) instead of a "dict function".
+
 You can also pass the dictionary explicitly: >
 	def DictFunc(self: dict<any>, arg: string)
 	   echo self[arg]
@@ -287,6 +289,40 @@ You can call a legacy dict function though: >
 	  var d = {func: Legacy, value: 'text'}
 	  d.func()
 	enddef
+
+						*vim9-def-dict-entry*
+Alternatively, `def dict.key()` can be used as syntax sugar to define a
+function and assign its funcref to a dictionary entry in one step: >
+	var opts: dict<any> = {}
+	def opts.out_cb(ch: channel, msg: string)
+	  echo msg
+	enddef
+	# Equivalent to:
+	#   def Anon(ch: channel, msg: string) ... enddef
+	#   opts.out_cb = Anon
+
+Bracket notation `def dict[expr]()` is also supported; `expr` follows the
+same rules as for `:function dict[expr]()`, see |dictionary-function-name|.
+
+This is NOT a dict function: `self` is not available.  The function is a
+normal `:def` function whose funcref happens to be stored in a dict entry.
+After a dot, the key uses dictionary-key rules, not function-naming rules
+(lowercase is allowed).
+
+This can also be used inside a `:def` function (nested): >
+	def Outer()
+	  var d: dict<any> = {}
+	  def d.callback()
+	    echo 'nested'
+	  enddef
+	  d.callback()
+	enddef
+
+This is useful for building callback tables for |job_start()|, plugin
+extension points, command dispatchers, and similar patterns.
+
+Using `:function` (instead of `:def`) for this is not allowed in Vim9
+script and results in *E1182*.
 
 The argument types and return type need to be specified.  The "any" type can
 be used, type checking will then be done at runtime, like with legacy
@@ -2355,11 +2391,6 @@ in Vim9 script.
 
 	let &laststatus=v:true
 	vim9cmd &laststatus = true
-<
-  - Not using a string where an argument requires a string (|E1174|) >vim
-
-	echo substitute('Hallo', 'a', 'e', v:true)
-	vim9cmd echo substitute('Hallo', 'a', 'e', true)  # E1174: String...
 <
 One consequence is that the item type of a list or dict given to |map()| must
 not change when its type is either declared or inferred.  For example, this

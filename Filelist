@@ -153,6 +153,7 @@ SRC_ALL =	\
 		src/spellfile.c \
 		src/spellsuggest.c \
 		src/strings.c \
+		src/strptime.c \
 		src/structs.h \
 		src/syntax.c \
 		src/tabpanel.c \
@@ -1198,6 +1199,7 @@ IGNORE = \
 		.github/FUNDING.yml \
 		.github/labeler.yml \
 		.github/workflows/label.yml \
+		AGENTS.md \
 		SECURITY.md \
 		ci/unlisted.make \
 		ci/hlgroups.make \

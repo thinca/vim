@@ -952,7 +952,7 @@ func Test_command_modifier_confirm()
   call term_sendkeys(buf, ":call Getout()\n")
   call WaitForAssert({-> assert_match('(Y)es, \[N\]o: ', term_getline(buf, 8))}, 1000)
   call term_sendkeys(buf, "y")
-  call WaitForAssert({-> assert_match('(Y)es, \[N\]o: ', term_getline(buf, 8))}, 1000)
+  call WaitForAssert({-> assert_match('Press ENTER or type command to continue', term_getline(buf, 8))}, 1000)
   call term_sendkeys(buf, "\<CR>")
   call TermWait(buf)
   call StopVimInTerminal(buf)
@@ -2103,8 +2103,8 @@ def s:check_previewpopup(expected_title: string)
   set previewpopup&
 enddef
 
-" Test for the 'previewpopup' option
 def Test_previewpopup()
+  # Test for the 'previewpopup' option
   CheckFeature quickfix
   set previewpopup=height:10,width:60
   pedit Xppfile

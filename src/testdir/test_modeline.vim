@@ -283,6 +283,61 @@ func Test_modeline_fails_modelineexpr()
   call s:modeline_fails('titlestring', 'titlestring=Something()', 'E992:')
 endfunc
 
+func Test_modeline_complete_uses_sandbox()
+  let modeline = &modeline
+  let modelineexpr = &modelineexpr
+  let modelinestrict = &modelinestrict
+
+  func! ModelineCompletePwnFindstart(findstart, base)
+    if a:findstart
+      call writefile(['findstart'], 'Xmodeline_complete_proof')
+      return 0
+    endif
+    return ['match']
+  endfunc
+
+  func! ModelineCompletePwnMatches(findstart, base)
+    if a:findstart
+      return 0
+    endif
+    call writefile(['matches'], 'Xmodeline_complete_proof')
+    return ['match']
+  endfunc
+
+  try
+    set modeline modelineexpr nomodelinestrict
+
+    call writefile([
+          \ 'vim: set complete=FModelineCompletePwnFindstart :',
+          \ 'body',
+          \ ], 'Xmodeline_complete_attack', 'D')
+    call delete('Xmodeline_complete_proof')
+    edit Xmodeline_complete_attack
+    call cursor(2, 1)
+    call assert_fails('call feedkeys("i\<C-N>\<Esc>", "xt")', 'E48:')
+    call assert_false(filereadable('Xmodeline_complete_proof'))
+    bwipe!
+
+    call writefile([
+          \ 'vim: set complete=FModelineCompletePwnMatches :',
+          \ 'body',
+          \ ], 'Xmodeline_complete_attack', 'D')
+    call delete('Xmodeline_complete_proof')
+    edit Xmodeline_complete_attack
+    call cursor(2, 1)
+    call assert_fails('call feedkeys("i\<C-N>\<Esc>", "xt")', 'E48:')
+    call assert_false(filereadable('Xmodeline_complete_proof'))
+    bwipe!
+  finally
+    let &modeline = modeline
+    let &modelineexpr = modelineexpr
+    let &modelinestrict = modelinestrict
+    call delete('Xmodeline_complete_proof')
+    delfunc ModelineCompletePwnFindstart
+    delfunc ModelineCompletePwnMatches
+  endtry
+endfunc
+
 func Test_modeline_setoption_verbose()
   let modeline = &modeline
   set modeline
@@ -608,6 +663,20 @@ func Test_modeline_strict_cannot_be_set_from_modeline()
   bwipe!
 
   let &modeline = modeline
+endfunc
+
+" Verify that backticks in 'path' set from a modeline are not executed
+func Test_path_modeline()
+  let lines =<< trim END
+    // vim: set path+=foobar :
+  END
+  call writefile(lines, 'Xpoc.c', 'D')
+
+  set nomodelinestrict modeline
+  call assert_fails('split Xpoc.c', 'E520:')
+
+  bwipe!
+  set modelinestrict& modeline&
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab
