@@ -513,6 +513,7 @@ typedef struct {
 typedef struct {
     vartype_T	si_vartype;
     class_T	*si_class;
+    int		si_dict_entry;	// def dict.key() sugar: target must be a dict
 } storeindex_T;
 
 // arguments to ISN_LOCKUNLOCK
