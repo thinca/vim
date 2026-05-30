@@ -917,6 +917,19 @@ remaining that refers to it.
 
 It is not necessary to use the "dict" attribute for a numbered function.
 
+The dictionary entry can also be specified with square brackets, in which
+case the key is an expression that is evaluated when the |:function| command
+is executed, the same as for |expr-[]|: >
+	:function mydict['with-dash']() dict
+	:   return len(self.data)
+	:endfunction
+	:let suffix = 'tail'
+	:function mydict[suffix]() dict
+	:   return len(self.data)
+	:endfunction
+In the second case "suffix" must exist when the |:function| line is
+executed.
+
 If you get an error for a numbered function, you can find out what it is with
 a trick.  Assuming the function is 42, the command is: >
 	:function g:42

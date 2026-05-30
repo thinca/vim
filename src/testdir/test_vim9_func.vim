@@ -116,14 +116,6 @@ def Test_wrong_function_name()
 
   lines =<< trim END
       vim9script
-      var Object = {}
-      def Object.Method()
-      enddef
-  END
-  v9.CheckScriptFailure(lines, 'E1182:')
-
-  lines =<< trim END
-      vim9script
       g:Object = {}
       function g:Object.Method()
       endfunction
@@ -135,17 +127,6 @@ def Test_wrong_function_name()
       def Define()
         function s:Object.Method()
         endfunction
-      enddef
-      defcompile
-  END
-  v9.CheckScriptFailure(lines, 'E1182:')
-  delfunc g:Define
-
-  lines =<< trim END
-      let s:Object = {}
-      def Define()
-        def Object.Method()
-        enddef
       enddef
       defcompile
   END
@@ -5067,6 +5048,419 @@ def Test_term_wait_in_job_exit_cb()
   # This shouldn't cause an ASAN error immediately, but will result in a use
   # after free when Vim exits.
   v9.CheckDefSuccess(lines)
+enddef
+
+def Test_def_dict_funcref_sugar()
+  # Dot notation: funcref stored, call, lowercase/callback-style name.
+  var lines =<< trim END
+      vim9script
+      var result: string
+      var d: dict<any> = {}
+      def d.out_cb(msg: string)
+        result = msg
+      enddef
+      assert_equal(v:t_func, type(d.out_cb))
+      d.out_cb('from callback')
+      assert_equal('from callback', result)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Bracket [expr]: variable, call and "..", not only a string literal.
+  lines =<< trim END
+      vim9script
+      var keyname = 'handler'
+      var d: dict<any> = {}
+      var r_var = ''
+      var r_call = ''
+      var r_cat = ''
+      def d[keyname]()
+        r_var = 'var key'
+      enddef
+      def d[toupper('ab')]()
+        r_call = 'call expr key'
+      enddef
+      def d['foo' .. 'bar']()
+        r_cat = 'concat key'
+      enddef
+      assert_equal(v:t_func, type(d.handler))
+      d.handler()
+      d.AB()
+      d.foobar()
+      assert_equal('var key', r_var)
+      assert_equal('call expr key', r_call)
+      assert_equal('concat key', r_cat)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Nested: dot + bracket [expr] (with whitespace inside [...]) in one outer :def.
+  lines =<< trim END
+      vim9script
+      var dot_result = ''
+      var expr_result = ''
+      def Outer()
+        var prefix = 'cb'
+        var d: dict<any> = {}
+        def d.inner()
+          dot_result = 'dot nested'
+        enddef
+        def d[ prefix .. '_hook' ]()
+          expr_result = 'expr key nested'
+        enddef
+        d.inner()
+        d.cb_hook()
+      enddef
+      Outer()
+      assert_equal('dot nested', dot_result)
+      assert_equal('expr key nested', expr_result)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {value: 42}
+      def d.method()
+        echo self.value
+      enddef
+      d.method()
+  END
+  v9.CheckScriptFailure(lines, 'E1001:')
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      function d.method()
+      endfunction
+  END
+  v9.CheckScriptFailure(lines, 'E1182:')
+
+  # ":export" has nothing to export here: the function is anonymous and only
+  # its funcref is stored in the dictionary entry.
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      export def d.method()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E1044:')
+
+  # Undefined name in def dict.key() / def dict[key]() form: in the bracket
+  # expression and in the dict name.
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d[key]()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E121:')
+
+  lines =<< trim END
+      vim9script
+      def nonexistent.key()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E121:')
+
+  # Dot and bracket forms in the same dict; non-identifier key works via [].
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      var marker = ''
+      def d.DotKey()
+        marker = 'dot'
+      enddef
+      def d['spa ce']()
+        marker = 'space'
+      enddef
+      d.DotKey()
+      assert_equal('dot', marker)
+      d['spa ce']()
+      assert_equal('space', marker)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Nested :def dict member on a g: dictionary (not only local/script-local).
+  lines =<< trim END
+      vim9script
+      g:d9_outer_dict = {}
+      var called = ''
+      def OuterGdict()
+        def g:d9_outer_dict.cb()
+          called = 'ok'
+        enddef
+        g:d9_outer_dict.cb()
+      enddef
+      OuterGdict()
+      assert_equal('ok', called)
+      unlet g:d9_outer_dict
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E713:')
+
+  # Digit-leading dot key: dict-key rules apply, like :function dict.0key().
+  # The nested path uses parse_def_dict_lval() and previously rejected this
+  # because it scanned the key with to_name_end()/eval_isnamec1().  Verify
+  # both forms store a funcref; calling via "d.0key()" at the start of a
+  # statement is unrelated and runs into the :d/:delete ambiguity (E1144).
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.0key()
+      enddef
+      def Outer()
+        def d.1key()
+        enddef
+      enddef
+      Outer()
+      assert_equal(v:t_func, type(d.0key))
+      assert_equal(v:t_func, type(d.1key))
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # A generic function needs type arguments at every call, so it cannot be
+  # reduced to the funcref the dictionary entry holds, the same as for
+  # "d.key = GenericFunc".
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.entry<T>(x: T): T
+        return x
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E1559:')
+
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var d: dict<any> = {}
+        def d.entry<T>(x: T): T
+          return x
+        enddef
+      enddef
+      defcompile
+  END
+  v9.CheckScriptFailure(lines, 'E1559:')
+
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var d: dict<any> = {}
+        def d['k']<T>(x: T): T
+          return x
+        enddef
+      enddef
+      defcompile
+  END
+  v9.CheckScriptFailure(lines, 'E1559:')
+
+  # def dict.key() sugar requires a dictionary target: checked at compile
+  # time for typed non-dict (E1012), at run time for "any" (E715).
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var l: list<any> = []
+        def l.cb()
+        enddef
+      enddef
+      defcompile
+  END
+  v9.CheckScriptFailure(lines, 'E1012:')
+
+  lines =<< trim END
+      vim9script
+      def Outer()
+        var x: any = []
+        def x.cb()
+        enddef
+      enddef
+      Outer()
+  END
+  v9.CheckScriptFailure(lines, 'E715:')
+
+  # At script level the target is resolved at run time, so a target that is
+  # not a dictionary reports E715.  The function body must not leak out and be
+  # executed as top-level commands.
+  lines =<< trim END
+      vim9script
+      var l = [0]
+      def l[0]()
+        g:dict_sugar_leaked = 1
+      enddef
+  END
+  unlet! g:dict_sugar_leaked
+  v9.CheckScriptFailure(lines, 'E715:')
+  assert_false(exists('g:dict_sugar_leaked'))
+
+  # Also when the target already holds a funcref, where the name of that
+  # function is available.
+  lines =<< trim END
+      vim9script
+      var l: list<func> = [() => 0]
+      def l[0]()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E715:')
+
+  lines =<< trim END
+      vim9script
+      var t = (1, 2)
+      def t[0]()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E715:')
+
+  lines =<< trim END
+      vim9script
+      class Cls
+        public var Member: func
+      endclass
+      var obj = Cls.new()
+      def obj.Member()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E715:')
+
+  # The entry holds the same kind of value as "d.key = () => {...}": an
+  # anonymous Vim9 function, at script level and in a nested :def alike.
+  lines =<< trim END
+      vim9script
+      var top: dict<any> = {}
+      def top.f(): number
+        return 7
+      enddef
+      def Build(): dict<any>
+        var d: dict<any> = {}
+        def d.f(): number
+          return 7
+        enddef
+        return d
+      enddef
+      var nested = Build()
+      var lambda: dict<any> = {}
+      lambda.f = (): number => 7
+      for Val in [top.f, nested.f, lambda.f]
+        assert_match('^function(''<lambda>\d\+'')$', string(Val))
+      endfor
+      assert_equal([7, 7, 7], [top.f(), nested.f(), lambda.f()])
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # ":def" always defines a Vim9 function, so the sugar also applies in a
+  # legacy script.
+  lines =<< trim END
+      let d = {}
+      def d.foo(): number
+        return 7
+      enddef
+      call assert_equal(7, d.foo())
+      call assert_match('^function(''<lambda>\d\+'')$', string(d.foo))
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # ":function" keeps the legacy dictionary function there, with "self".
+  lines =<< trim END
+      let d = {'v': 5}
+      function d.foo() dict
+        return self.v
+      endfunction
+      call assert_equal(5, d.foo())
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # Reject funcref when the dictionary member type does not allow it.
+  lines =<< trim END
+      vim9script
+      var d: dict<number> = {}
+      def d.cb()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E1012:')
+
+  # Typed dict member: allow matching function signature.
+  lines =<< trim END
+      vim9script
+      var d: dict<func(number): number> = {}
+      def d.cb(x: number): number
+        return x * 2
+      enddef
+      assert_equal(10, d.cb(5))
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # An empty generic type list after the dict member name must not crash.
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      def d.key<>()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E1559:')
+
+  # Same when an existing non-funcref entry is overwritten, where the key is
+  # not available as a function name.
+  lines =<< trim END
+      vim9script
+      var d: dict<any> = {}
+      d.entry = 42
+      def d.entry<>()
+      enddef
+  END
+  v9.CheckScriptFailure(lines, 'E1559:')
+
+  # Imported namespace dictionary: def lib.handlers.cb() must parse the full
+  # dict expression, not stop at the first dot.
+  lines =<< trim END
+      vim9script
+      export var handlers: dict<any> = {}
+  END
+  writefile(lines, 'Xdefdictimport.vim', 'D')
+  lines =<< trim END
+      vim9script
+      import './Xdefdictimport.vim' as lib
+      var called = ''
+      def Outer()
+        def lib.handlers.cb()
+          called = 'ok'
+        enddef
+        lib.handlers.cb()
+      enddef
+      Outer()
+      assert_equal('ok', called)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  # defcompile with def dict.key()
+  lines =<< trim END
+      let s:obj = {}
+      def Define()
+        def obj.func()
+        enddef
+      enddef
+      defcompile
+  END
+  v9.CheckScriptSuccess(lines)
+  delfunc g:Define
+
+  # def dict.key() inside an "if false" block must not raise a spurious
+  # type-mismatch error when ctx_skip == SKIP_YES.
+  lines =<< trim END
+      vim9script
+      def Outer()
+        if false
+          var d: dict<any> = {}
+          def d.cb()
+          enddef
+        endif
+      enddef
+      defcompile
+  END
+  v9.CheckScriptSuccess(lines)
 enddef
 
 " vim: ts=8 sw=2 sts=2 expandtab tw=80 fdm=marker
