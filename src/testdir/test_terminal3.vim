@@ -1162,11 +1162,9 @@ func Test_terminal_max_combining_chars()
   exe buf . "bwipe!"
 endfunc
 
-func Test_term_getpos()
-  CheckRunVimInTerminal
-  CheckUnix
-  CheckExecutable seq
+func s:run_term_getpos_body()
   defer delete('XTest_getpos_result')
+  defer delete('XTest_getpos_diag')
 
   let lines =<< trim EOL
      term ++curwin sh
@@ -1207,7 +1205,19 @@ func Test_term_getpos()
   call term_sendkeys(buf, ":call line('w0')\<cr>")
   call term_sendkeys(buf, ":call line('w$')\<cr>")
   call term_wait(buf)
-  call WaitForAssert({-> assert_match("for i in", term_getline(buf, 1))})
+  let assert_failed = WaitForAssert({-> assert_match("for i in", term_getline(buf, 1))})
+  if assert_failed
+    " Diagnostic capture for the flaky "for i in" failure: dump inner Vim
+    " state plus outer's view of the screen and cursor.
+    call delete('XTest_getpos_diag')
+    call term_sendkeys(buf, ":call writefile([printf('mode=%s line=%d col=%d w0=%d wdollar=%d', mode(), line('.'), col('.'), line('w0'), line('w$'))], 'XTest_getpos_diag')\<cr>")
+    call WaitForAssert({-> assert_true(filereadable('XTest_getpos_diag'))}, 2000)
+    let inner_state = filereadable('XTest_getpos_diag') ? readfile('XTest_getpos_diag') : ['(unread)']
+    let outer_screen = map(range(1, 15), {_, n -> term_getline(buf, n)})
+    let outer_cursor = term_getcursor(buf)
+    call assert_report(printf('DIAG inner=%s outer_cursor=%s row1=%s screen=%s',
+          \ string(inner_state), string(outer_cursor), string(term_getline(buf, 1)), string(outer_screen)))
+  endif
   call WaitForAssert({-> assert_match("line12", term_getline(buf, 13))})
 
   call StopVimInTerminal(buf)
@@ -1216,6 +1226,157 @@ func Test_term_getpos()
   setl buftype=terminal
   call assert_equal(2, line('w0') + line('w$'))
   bw
+endfunc
+
+func Test_term_getpos()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+endfunc
+
+" Stress test: 20 copies to gather flaky-rate samples in a single CI run.
+" Each disables retry to get raw single-shot results.
+" Remove these before merging upstream.
+func Test_term_getpos_stress01()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress02()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress03()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress04()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress05()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress06()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress07()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress08()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress09()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress10()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress11()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress12()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress13()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress14()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress15()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress16()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress17()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress18()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress19()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
+endfunc
+func Test_term_getpos_stress20()
+  CheckRunVimInTerminal
+  CheckUnix
+  CheckExecutable seq
+  call s:run_term_getpos_body()
+  let g:test_is_flaky = 0
 endfunc
 
 func Test_term_autowrite()
