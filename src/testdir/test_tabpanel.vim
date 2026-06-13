@@ -78,18 +78,25 @@ function Test_tabpanel_with_vsplit()
   call writefile(lines, 'XTest_tabpanel_with_vsplit', 'D')
 
   let buf = RunVimInTerminal('-S XTest_tabpanel_with_vsplit', {'rows': 10, 'cols': 78})
+  " Wait for the inner Vim to finish rendering before taking the first
+  " screen dump.  Otherwise the initial dump can race with the terminal
+  " size and :tabnew/tabpanel layout settling.
+  call WaitForAssert({-> assert_match('0,0-1.*All', term_getline(buf, 10))})
+  call TermWait(buf, 100)
+  call term_sendkeys(buf, "\<C-L>")
+  call TermWait(buf, 100)
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_0', {})
-  call term_sendkeys(buf, ":vsplit\<CR>")
+  call term_sendkeys(buf, ":vsplit\<CR>\<C-L>")
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_1', {})
-  call term_sendkeys(buf, ":vsplit\<CR>")
+  call term_sendkeys(buf, ":vsplit\<CR>\<C-L>")
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_2', {})
 
   call term_sendkeys(buf, ":only\<CR>")
-  call term_sendkeys(buf, ":set tabpanelopt=align:right,vert\<CR>")
+  call term_sendkeys(buf, ":set tabpanelopt=align:right,vert\<CR>\<C-L>")
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_3', {})
-  call term_sendkeys(buf, ":vsplit\<CR>")
+  call term_sendkeys(buf, ":vsplit\<CR>\<C-L>")
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_4', {})
-  call term_sendkeys(buf, ":vsplit\<CR>")
+  call term_sendkeys(buf, ":vsplit\<CR>\<C-L>")
   call VerifyScreenDump(buf, 'Test_tabpanel_with_vsplit_5', {})
   call StopVimInTerminal(buf)
 endfunc
