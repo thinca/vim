@@ -1431,6 +1431,33 @@ compile_call(
 		}
 	    }
 
+	    // Inline the number-only bitwise builtins as instructions when
+	    // the operands are statically known to be numbers.  For any
+	    // other operand type fall through to generate_BCALL() so the
+	    // existing compile-time type errors are produced.
+	    if ((STRCMP(name, "and") == 0 || STRCMP(name, "or") == 0
+					      || STRCMP(name, "xor") == 0)
+								   && argcount == 2)
+	    {
+		if (get_type_on_stack(cctx, 0)->tt_type == VAR_NUMBER
+			&& get_type_on_stack(cctx, 1)->tt_type == VAR_NUMBER)
+		{
+		    exprtype_T	op = name[0] == 'a' ? EXPR_BITAND
+				       : name[0] == 'o' ? EXPR_BITOR
+							: EXPR_BITXOR;
+		    res = generate_BITOP(cctx, op);
+		    idx = -1;
+		}
+	    }
+	    else if (STRCMP(name, "invert") == 0 && argcount == 1)
+	    {
+		if (get_type_on_stack(cctx, 0)->tt_type == VAR_NUMBER)
+		{
+		    res = generate_INVERTNR(cctx);
+		    idx = -1;
+		}
+	    }
+
 	    if ((STRCMP(name, "writefile") == 0 && argcount > 2)
 		    || (STRCMP(name, "mkdir") == 0 && argcount > 1))
 	    {

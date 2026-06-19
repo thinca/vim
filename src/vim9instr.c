@@ -474,6 +474,34 @@ generate_two_op(cctx_T *cctx, char_u *op)
 }
 
 /*
+ * Generate an ISN_OPNR instruction for a bitwise builtin (and()/or()/xor())
+ * with op type "exprtype".  Both operands are known to be numbers.
+ */
+    int
+generate_BITOP(cctx_T *cctx, exprtype_T exprtype)
+{
+    isn_T	*isn;
+
+    RETURN_OK_IF_SKIP(cctx);
+    if ((isn = generate_instr_drop(cctx, ISN_OPNR, 1)) == NULL)
+	return FAIL;
+    isn->isn_arg.op.op_type = exprtype;
+    return OK;
+}
+
+/*
+ * Generate an ISN_INVERTNR instruction for invert() on a number.
+ */
+    int
+generate_INVERTNR(cctx_T *cctx)
+{
+    RETURN_OK_IF_SKIP(cctx);
+    if (generate_instr(cctx, ISN_INVERTNR) == NULL)
+	return FAIL;
+    return OK;
+}
+
+/*
  * Choose correct error message for the specified type information.
  */
     static isntype_T
@@ -2944,6 +2972,7 @@ delete_instr(isn_T *isn)
 	case ISN_LOCKCONST:
 	case ISN_MEMBER:
 	case ISN_NEGATENR:
+	case ISN_INVERTNR:
 	case ISN_NEWDICT:
 	case ISN_NEWLIST:
 	case ISN_NEWTUPLE:

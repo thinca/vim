@@ -4889,6 +4889,9 @@ typedef enum
     EXPR_REM,		// %
     EXPR_LSHIFT,	// <<
     EXPR_RSHIFT,	// >>
+    EXPR_BITAND,	// and()
+    EXPR_BITOR,		// or()
+    EXPR_BITXOR,	// xor()
     // used with ISN_ADDLIST
     EXPR_COPY,		// create new list
     EXPR_APPEND,	// append to first list

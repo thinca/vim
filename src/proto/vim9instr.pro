@@ -11,6 +11,8 @@ int may_generate_2STRING(int offset, int tostring_flags, cctx_T *cctx);
 int generate_add_instr(cctx_T *cctx, vartype_T vartype, type_T *type1, type_T *type2, exprtype_T expr_type);
 vartype_T operator_type(type_T *type1, type_T *type2);
 int generate_two_op(cctx_T *cctx, char_u *op);
+int generate_BITOP(cctx_T *cctx, exprtype_T exprtype);
+int generate_INVERTNR(cctx_T *cctx);
 int check_compare_types(exprtype_T type, typval_T *tv1, typval_T *tv2);
 int generate_COMPARE(cctx_T *cctx, exprtype_T exprtype, int ic);
 int generate_CONCAT(cctx_T *cctx, int count);

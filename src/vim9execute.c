@@ -5544,6 +5544,9 @@ exec_instructions(ectx_T *ectx)
 					  else
 					      res = (uvarnumber_T)arg1 >> arg2;
 					  break;
+			case EXPR_BITAND: res = arg1 & arg2; break;
+			case EXPR_BITOR:  res = arg1 | arg2; break;
+			case EXPR_BITXOR: res = arg1 ^ arg2; break;
 			default: break;
 		    }
 
@@ -6245,6 +6248,12 @@ exec_instructions(ectx_T *ectx)
 		    tv->vval.v_float = -tv->vval.v_float;
 		else
 		    tv->vval.v_number = -tv->vval.v_number;
+		break;
+
+	    case ISN_INVERTNR:
+		tv = STACK_TV_BOT(-1);
+		// the number type is known to the compiler
+		tv->vval.v_number = ~tv->vval.v_number;
 		break;
 
 	    case ISN_CHECKTYPE:
@@ -7789,6 +7798,9 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 			case EXPR_ADD: what = "+"; break;
 			case EXPR_LSHIFT: what = "<<"; break;
 			case EXPR_RSHIFT: what = ">>"; break;
+			case EXPR_BITAND: what = "and()"; break;
+			case EXPR_BITOR:  what = "or()"; break;
+			case EXPR_BITXOR: what = "xor()"; break;
 			default:       what = "???"; break;
 		    }
 		    switch (iptr->isn_type)
@@ -7906,6 +7918,7 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 	    case ISN_USEDICT: smsg("%s%4d USEDICT", pfx, current); break;
 
 	    case ISN_NEGATENR: smsg("%s%4d NEGATENR", pfx, current); break;
+	    case ISN_INVERTNR: smsg("%s%4d INVERTNR", pfx, current); break;
 
 	    case ISN_CHECKTYPE:
 		  {

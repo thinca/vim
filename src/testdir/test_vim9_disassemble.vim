@@ -3155,6 +3155,60 @@ def Test_disassemble_bitshift()
                '10 RETURN void', instr)
 enddef
 
+def BitwiseInline(n: number)
+  var a = and(n, 0xFF)
+  var b = or(n, 0xFF)
+  var c = xor(n, 0xFF)
+  var d = invert(n)
+enddef
+
+def Test_disassemble_bitwise_inline()
+  var instr = execute('disassemble BitwiseInline')
+  assert_match('BitwiseInline\_s*' ..
+               'var a = and(n, 0xFF)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ PUSHNR 255\_s*' ..
+               '\d\+ OPNR and()\_s*' ..
+               '\d\+ STORE $0\_s*' ..
+               'var b = or(n, 0xFF)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ PUSHNR 255\_s*' ..
+               '\d\+ OPNR or()\_s*' ..
+               '\d\+ STORE $1\_s*' ..
+               'var c = xor(n, 0xFF)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ PUSHNR 255\_s*' ..
+               '\d\+ OPNR xor()\_s*' ..
+               '\d\+ STORE $2\_s*' ..
+               'var d = invert(n)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ INVERTNR\_s*' ..
+               '\d\+ STORE $3', instr)
+enddef
+
+def BitwiseAny(n: any)
+  var a = and(n, 0xFF)
+  var b = invert(n)
+enddef
+
+def Test_disassemble_bitwise_any()
+  # When the operand type is not statically a number the builtin call is not
+  # inlined and the generic ISN_BCALL path is used.
+  var instr = execute('disassemble BitwiseAny')
+  assert_match('BitwiseAny\_s*' ..
+               'var a = and(n, 0xFF)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ PUSHNR 255\_s*' ..
+               '\d\+ CHECKTYPE number stack\[-2] arg 1\_s*' ..
+               '\d\+ BCALL and(argc 2)\_s*' ..
+               '\d\+ STORE $0\_s*' ..
+               'var b = invert(n)\_s*' ..
+               '\d\+ LOAD arg\[-1]\_s*' ..
+               '\d\+ CHECKTYPE number stack\[-1] arg 1\_s*' ..
+               '\d\+ BCALL invert(argc 1)\_s*' ..
+               '\d\+ STORE $1', instr)
+enddef
+
 def s:OneDefer()
   defer delete("file")
 enddef

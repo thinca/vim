@@ -206,6 +206,20 @@ enddef
 def Test_and()
   v9.CheckSourceDefAndScriptFailure(['and("x", 0x2)'], ['E1013: Argument 1: type mismatch, expected number but got string', 'E1210: Number required for argument 1'])
   v9.CheckSourceDefAndScriptFailure(['and(0x1, "x")'], ['E1013: Argument 2: type mismatch, expected number but got string', 'E1210: Number required for argument 2'])
+
+  # The compiler inlines and() when both operands are number; results must
+  # match the builtin for the full signed 64-bit range, including negatives.
+  var lines =<< trim END
+      assert_equal(0x600, and(0x12345678, 0xF00))
+      assert_equal(0, and(0, -1))
+      assert_equal(-2, and(-1, -2))
+      assert_equal(0x7FFFFFFFFFFFFFFF, and(0x7FFFFFFFFFFFFFFF, -1))
+      assert_equal(5, and(5, -1))
+      var a = 0x12345678
+      var b = 0xFFFF
+      assert_equal(0x5678, and(a, b))
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
 enddef
 
 def Test_append()
@@ -2471,6 +2485,17 @@ enddef
 
 def Test_invert()
   v9.CheckSourceDefAndScriptFailure(['invert("x")'], ['E1013: Argument 1: type mismatch, expected number but got string', 'E1210: Number required for argument 1'])
+
+  # The compiler inlines invert() when the operand is number.
+  var lines =<< trim END
+      assert_equal(-1, invert(0))
+      assert_equal(0, invert(-1))
+      assert_equal(-0x12345679, invert(0x12345678))
+      assert_equal(-0x100000000, invert(0xFFFFFFFF))
+      var a = 0xFF
+      assert_equal(-256, invert(a))
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
 enddef
 
 def Test_isdirectory()
@@ -3151,6 +3176,18 @@ enddef
 def Test_or()
   v9.CheckSourceDefAndScriptFailure(['or("x", 0x2)'], ['E1013: Argument 1: type mismatch, expected number but got string', 'E1210: Number required for argument 1'])
   v9.CheckSourceDefAndScriptFailure(['or(0x1, "x")'], ['E1013: Argument 2: type mismatch, expected number but got string', 'E1210: Number required for argument 2'])
+
+  # The compiler inlines or() when both operands are number.
+  var lines =<< trim END
+      assert_equal(0x12345679, or(0x12345678, 0x1))
+      assert_equal(-1, or(-1, 0))
+      assert_equal(-1, or(0, -1))
+      assert_equal(-1, or(-2, 1))
+      var a = 0xF0
+      var b = 0x0F
+      assert_equal(0xFF, or(a, b))
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
 enddef
 
 def Test_pathshorten()
@@ -5249,6 +5286,17 @@ enddef
 def Test_xor()
   v9.CheckSourceDefAndScriptFailure(['xor("x", 0x2)'], ['E1013: Argument 1: type mismatch, expected number but got string', 'E1210: Number required for argument 1'])
   v9.CheckSourceDefAndScriptFailure(['xor(0x1, "x")'], ['E1013: Argument 2: type mismatch, expected number but got string', 'E1210: Number required for argument 2'])
+
+  # The compiler inlines xor() when both operands are number.
+  var lines =<< trim END
+      assert_equal(0x12345679, xor(0x12345678, 0x1))
+      assert_equal(-1, xor(0, -1))
+      assert_equal(0, xor(-1, -1))
+      assert_equal(0xFF, xor(0xF0, 0x0F))
+      var a = 0x12345678
+      assert_equal(0, xor(a, a))
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
 enddef
 
 def Test_writefile()
