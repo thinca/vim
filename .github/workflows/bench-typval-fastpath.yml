@@ -1,0 +1,62 @@
+name: Benchmark typval copy/clear fast-path
+
+# Measures the base commit against the patched commit with callgrind
+# instruction-read (Ir) counts, which are deterministic and runner-independent.
+# Two workloads are run: a scalar-heavy one (best case) and a non-scalar-heavy
+# one (worst case).  The job fails only on a correctness change (a microbench
+# check value differs); Ir numbers are reported for the PR write-up.
+#
+# Triggered on demand (workflow_dispatch) and on pushes to this bench branch.
+# It is scoped to this one branch on purpose: the heavy double callgrind build
+# should not fire on every push that happens to touch typval.c elsewhere, and
+# workflow_dispatch alone is unusable here because this workflow lives only on
+# the bench branch, not on the default branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Base ref to compare against (default: merge-base with origin/master; pass explicitly if that is stale on a fork)"
+        required: false
+        default: ""
+  push:
+    branches:
+      - typval-fastpath-bench
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind libtinfo-dev
+
+      - name: Determine base commit
+        id: base
+        run: |
+          if [ -n "${{ github.event.inputs.base }}" ]; then
+            base="${{ github.event.inputs.base }}"
+          else
+            git fetch --quiet origin master || true
+            base=$(git merge-base HEAD origin/master 2>/dev/null || true)
+          fi
+          if [ -z "$base" ]; then
+            echo "Could not determine a base commit (origin/master missing or stale)." >&2
+            echo "Re-run via workflow_dispatch with an explicit 'base' input." >&2
+            exit 1
+          fi
+          echo "sha=$base" >>"$GITHUB_OUTPUT"
+          echo "Base commit: $base"
+
+      - name: Run benchmark
+        run: ci/bench/run_typval_bench.sh "${{ steps.base.outputs.sha }}" "${{ github.sha }}"
