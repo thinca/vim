@@ -2353,6 +2353,25 @@ handle_debug(isn_T *iptr, ectx_T *ectx)
 }
 
 /*
+ * Do a runtime check of the RHS value against the LHS Dict member type.
+ * This is used by the STOREINDEX instruction to perform a type check
+ * at runtime if compile time type check cannot be performed (VAR_ANY).
+ * Returns FAIL if there is a type mismatch.
+ */
+    static int
+storeindex_check_dict_member_type(
+    dict_T	*dict,
+    typval_T	*rhs_tv,
+    ectx_T	*ectx)
+{
+    if (dict == NULL || dict->dv_type == NULL
+					     || dict->dv_type->tt_member == NULL)
+	return OK;
+
+    return check_typval_type(dict->dv_type->tt_member, rhs_tv, ectx->ec_where);
+}
+
+/*
  * Do a runtime check of the RHS value against the LHS List member type.
  * This is used by the STOREINDEX instruction to perform a type check
  * at runtime if compile time type check cannot be performed (VAR_ANY).
@@ -2406,6 +2425,12 @@ execute_storeindex(isn_T *iptr, ectx_T *ectx)
     {
 	check_rhs_type = TRUE;
 	dest_type = tv_dest->v_type;
+	if (iptr->isn_arg.storeindex.si_dict_entry
+		&& dest_type != VAR_DICT)
+	{
+	    emsg(_(e_dictionary_required));
+	    return FAIL;
+	}
 	if (dest_type == VAR_DICT)
 	    status = do_2string(tv_idx, TRUE, FALSE);
 	else if (dest_type == VAR_OBJECT && tv_idx->v_type == VAR_STRING)
@@ -2527,6 +2552,12 @@ execute_storeindex(isn_T *iptr, ectx_T *ectx)
 	    if (key == NULL)
 		key = (char_u *)"";
 	    di = dict_find(dict, key, -1);
+
+	    // Do a runtime type check for VAR_ANY
+	    if (check_rhs_type
+		    && storeindex_check_dict_member_type(dict, tv, ectx) == FAIL)
+		return FAIL;
+
 	    if (di != NULL)
 	    {
 		if (error_if_locked(di->di_tv.v_lock,
@@ -7409,8 +7440,10 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 		break;
 
 	    case ISN_STOREINDEX:
-		smsg("%s%4d STOREINDEX %s", pfx, current,
-			    vartype_name(iptr->isn_arg.storeindex.si_vartype));
+		smsg("%s%4d STOREINDEX %s%s", pfx, current,
+			    vartype_name(iptr->isn_arg.storeindex.si_vartype),
+			    iptr->isn_arg.storeindex.si_dict_entry
+						   ? " (dict member)" : "");
 		break;
 
 	    case ISN_STORERANGE:
