@@ -291,6 +291,53 @@ You can call a legacy dict function though: >
 	  d.func()
 	enddef
 
+						*vim9-def-dict-entry*
+Alternatively, `def dict.key()` defines a function and assigns its funcref to
+a dictionary entry in one step: >
+	var opts: dict<any> = {}
+	def opts.out_cb(ch: channel, msg: string)
+	  echo msg
+	enddef
+	# Equivalent to:
+	#   def Anon(ch: channel, msg: string) ... enddef
+	#   opts.out_cb = Anon
+
+This is useful for building callback tables for |job_start()|, plugin
+extension points, command dispatchers, and similar patterns.  Assigning a
+lambda block is shorter, but its body cannot contain a line starting with
+"}", so a dictionary literal cannot be written there, see |vim9-lambda|.
+Using `:def` and `enddef` avoids that restriction without having to invent a
+name for the function.
+
+Bracket notation `def dict[expr]()` is also supported.  The `expr` is
+evaluated when the function is defined, the same as for `:function
+dict[expr]()` (see |numbered-function|).
+
+This is NOT a dict function: `self` is not available.  The function is a
+normal `:def` function whose funcref happens to be stored in a dict entry.
+After a dot, the key uses dictionary-key rules, not function-naming rules
+(lowercase is allowed).  The target must be a |Dictionary|, other assignable
+values such as an object member give |E715|.
+
+The function is anonymous, only its funcref exists.  Therefore a generic
+function cannot be defined this way, since its type arguments must be given
+at every call and it can then not be reduced to a funcref; this is the same
+restriction that applies to `d.key = GenericFunc`.  For the same reason
+`:export` cannot be used, there is no name to export.
+
+`:def` always defines a Vim9 function, so this also works in a legacy script.
+There `:function` keeps defining a dictionary function with `self`; in Vim9
+script `:function` results in |E1182|.
+
+This can also be used inside a `:def` function (nested): >
+	def Outer()
+	  var d: dict<any> = {}
+	  def d.callback()
+	    echo 'nested'
+	  enddef
+	  d.callback()
+	enddef
+
 The argument types and return type need to be specified.  The "any" type can
 be used, type checking will then be done at runtime, like with legacy
 functions.

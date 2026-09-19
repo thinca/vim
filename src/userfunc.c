@@ -4540,8 +4540,11 @@ trans_function_name_ext(
 	}
 	else
 	{
-	    if (!skip && !(flags & TFN_QUIET) && (fdp == NULL
-			     || lv.ll_dict == NULL || fdp->fd_newkey == NULL))
+	    if (!skip && !(flags & TFN_QUIET)
+			    && !(flags & TFN_DEF_DICT_LVAL)
+			    && (fdp == NULL
+				|| lv.ll_dict == NULL
+				|| fdp->fd_newkey == NULL))
 		emsg(_(e_funcref_required));
 	    else
 		*pp = end;
@@ -5069,6 +5072,7 @@ define_function(
     hashitem_T	*hi;
     linenr_T	sourcing_lnum_top;
     int		vim9script = in_vim9script();
+    int		is_def_dict_lval = FALSE;
     imported_T	*import = NULL;
 
     // ":function" without argument: list functions.
@@ -5121,28 +5125,59 @@ define_function(
     }
     else
     {
-	if (vim9script)
+	if (vim9script && p[0] == 's' && p[1] == ':')
 	{
-	    if (p[0] == 's' && p[1] == ':')
-	    {
-		semsg(_(e_cannot_use_s_colon_in_vim9_script_str), p);
-		return NULL;
-	    }
-	    p = to_name_end(p, TRUE);
-	    if (*skipwhite(p) == '.' && vim_strchr(p, '(') != NULL)
-	    {
-		semsg(_(e_cannot_define_dict_func_in_vim9_script_str),
-								     eap->arg);
-		return NULL;
-	    }
+	    semsg(_(e_cannot_use_s_colon_in_vim9_script_str), p);
+	    return NULL;
+	}
+	// ":def" always defines a Vim9 function, so "def dict.key()" is the
+	// funcref sugar in a legacy script as well.  ":function" keeps the
+	// legacy dictionary function, which Vim9 script does not allow.
+	if (vim9script || eap->cmdidx == CMD_def)
+	{
+	    // Like compile_nested_function(): '.' or '[' must follow the dict
+	    // token immediately, not "def d .key()" (get_lval / find_name_end).
+	    char_u *name_end = to_name_end(p, TRUE);
 
-	    p = eap->arg;
+	    if ((*name_end == '.' || *name_end == '[')
+					  && vim_strchr(name_end, '(') != NULL)
+	    {
+		if (eap->cmdidx != CMD_def)
+		{
+		    semsg(_(e_cannot_define_dict_func_in_vim9_script_str),
+								     eap->arg);
+		    return NULL;
+		}
+		if (is_export)
+		{
+		    // The function is anonymous, only its funcref is stored
+		    // in the dictionary entry, so there is nothing to export.
+		    emsg(_(e_export_with_invalid_argument));
+		    is_export = FALSE;
+		    return NULL;
+		}
+		// "def dict.key()" or "def dict[key]()": store funcref on dict
+		// entry; not a dictionary function (no FC_DICT / no "self").
+		is_def_dict_lval = TRUE;
+	    }
 	}
 
 	int tfn_flags = TFN_NO_AUTOLOAD | TFN_NEW_FUNC
 				       | (class_flags != 0 ? TFN_IN_CLASS : 0);
+	if (is_def_dict_lval)
+	    tfn_flags |= TFN_NO_DECL | TFN_DEF_DICT_LVAL;
 	name = save_function_name(&p, &is_global, eap->skip, tfn_flags, &fudi);
 	paren = (vim_strchr(p, '(') != NULL);
+	if (is_def_dict_lval && fudi.fd_dict == NULL && !eap->skip)
+	{
+	    // The target must be a Dictionary; it may have resolved to
+	    // something else, like a List item or an object member.
+	    if (!aborting())
+		emsg(_(e_dictionary_required));
+	    vim_free(name);
+	    vim_free(fudi.fd_newkey);
+	    return NULL;
+	}
 	if (name == NULL && (fudi.fd_dict == NULL || !paren) && !eap->skip)
 	{
 	    /*
@@ -5203,6 +5238,18 @@ define_function(
     p = skipwhite(p);
     if (vim9script && eap->cmdidx == CMD_def && *p == '<')
     {
+	if (is_def_dict_lval)
+	{
+	    // A generic function needs type arguments at every call, so it
+	    // cannot be reduced to the funcref that the dictionary entry
+	    // holds, the same as for "d.key = GenericFunc".
+	    char_u  *lval = vim_strnsave(eap->arg, p - eap->arg);
+
+	    emsg_funcname(e_generic_func_missing_type_args_str,
+					     lval == NULL ? eap->arg : lval);
+	    vim_free(lval);
+	    goto ret_free;
+	}
 	// generic function
 	p = parse_generic_func_type_params(name, p, &gfatab, cctx);
 	if (p == NULL)
@@ -5252,42 +5299,47 @@ define_function(
 				     || (fudi.fd_di->di_tv.v_type != VAR_FUNC
 				 && fudi.fd_di->di_tv.v_type != VAR_PARTIAL)))
 	{
-	    char_u  *name_base = arg;
-	    int	    i;
-
-	    // When defining a dictionary function with bracket notation
-	    // (e.g. obj['foo-bar']()), the key is a dictionary key and is not
-	    // required to follow function naming rules.  Skip the identifier
-	    // check in that case.
-	    if (arg != fudi.fd_newkey)
+	    // For "def dict.key()" or "def dict['key']()", the key is a
+	    // dictionary key, not a function name -- skip name validation.
+	    if (!is_def_dict_lval)
 	    {
-		if (*arg == K_SPECIAL)
+		char_u  *name_base = arg;
+		int	    i;
+
+		// When defining a dictionary function with bracket notation
+		// (e.g. obj['foo-bar']()), the key is a dictionary key and is
+		// not required to follow function naming rules.  Skip the
+		// identifier check in that case.
+		if (arg != fudi.fd_newkey)
 		{
-		    name_base = vim_strchr(arg, '_');
-		    if (name_base == NULL)
-			name_base = arg + 3;
-		    else
-			++name_base;
-		}
-		for (i = 0; name_base[i] != NUL && (i == 0
+		    if (*arg == K_SPECIAL)
+		    {
+			name_base = vim_strchr(arg, '_');
+			if (name_base == NULL)
+			    name_base = arg + 3;
+			else
+			    ++name_base;
+		    }
+		    for (i = 0; name_base[i] != NUL && (i == 0
 					    ? eval_isnamec1(name_base[i])
 					    : eval_isnamec(name_base[i])); ++i)
-		    ;
-		if (name_base[i] != NUL)
-		{
-		    emsg_funcname(e_invalid_argument_str, arg);
-		    goto ret_free;
-		}
+			;
+		    if (name_base[i] != NUL)
+		    {
+			emsg_funcname(e_invalid_argument_str, arg);
+			goto ret_free;
+		    }
 
-		// In Vim9 script a function cannot have the same name as a
-		// variable.
-		if (vim9script && *arg == K_SPECIAL
-		    && eval_variable(name_base, i, 0, NULL,
-			NULL, EVAL_VAR_NOAUTOLOAD + EVAL_VAR_IMPORT
+		    // In Vim9 script a function cannot have the same name as a
+		    // variable.
+		    if (vim9script && *arg == K_SPECIAL
+			&& eval_variable(name_base, i, 0, NULL,
+			    NULL, EVAL_VAR_NOAUTOLOAD + EVAL_VAR_IMPORT
 						     + EVAL_VAR_NO_FUNC) == OK)
-		{
-		    semsg(_(e_redefining_script_item_str), name_base);
-		    goto ret_free;
+		    {
+			semsg(_(e_redefining_script_item_str), name_base);
+			goto ret_free;
+		    }
 		}
 	    }
 	}
@@ -5398,7 +5450,7 @@ define_function(
 	// need to skip the body to be able to find what follows.
 	if (!eap->skip && !eap->forceit)
 	{
-	    if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL)
+	    if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL && !is_def_dict_lval)
 		emsg(_(e_dictionary_entry_already_exists));
 	    else if (name != NULL && find_func(name, is_global) != NULL)
 		emsg_funcname(e_function_str_already_exists_add_bang_to_replace, name);
@@ -5431,7 +5483,7 @@ define_function(
 	char	numbuf[NUMBUFLEN];
 
 	fp = NULL;
-	if (fudi.fd_newkey == NULL && !eap->forceit)
+	if (fudi.fd_newkey == NULL && !eap->forceit && !is_def_dict_lval)
 	{
 	    emsg(_(e_dictionary_entry_already_exists));
 	    goto erret;
@@ -5446,11 +5498,24 @@ define_function(
 	else if (value_check_lock(fudi.fd_di->di_tv.v_lock, eap->arg, FALSE))
 	    goto erret;
 
-	// Give the function a sequential number.  Can only be used with a
-	// Funcref!
+	// Give the function a name that can only be used with a Funcref.
 	vim_free(name);
-	namelen = vim_snprintf(numbuf, sizeof(numbuf), "%d", ++func_nr);
-	name = vim_strnsave((char_u *)numbuf, namelen);
+	if (is_def_dict_lval)
+	{
+	    // "def dict.key()" defines an anonymous Vim9 function, name it
+	    // like any other anonymous function so that the result cannot be
+	    // told apart from "d.key = () => {...}".
+	    string_T	lambda = get_lambda_name();
+
+	    namelen = lambda.length;
+	    name = vim_strnsave(lambda.string, lambda.length);
+	}
+	else
+	{
+	    // Give the function a sequential number.
+	    namelen = vim_snprintf(numbuf, sizeof(numbuf), "%d", ++func_nr);
+	    name = vim_strnsave((char_u *)numbuf, namelen);
+	}
 	if (name == NULL)
 	    goto erret;
     }
@@ -5606,7 +5671,7 @@ define_function(
 	    goto erret;
 	fp_allocated = TRUE;
 
-	if (fudi.fd_dict != NULL)
+	if (fudi.fd_dict != NULL && !is_def_dict_lval)
 	{
 	    char_u *func_name = vim_strnsave(name, namelen);
 
@@ -5699,6 +5764,59 @@ define_function(
     else
 	fp->uf_def_status = UF_NOT_COMPILED;
 
+    if (eap->cmdidx == CMD_def)
+	set_function_type(fp);
+
+    if (is_def_dict_lval && fudi.fd_dict != NULL)
+    {
+	type_T *member_type = fudi.fd_dict->dv_type != NULL
+					    ? fudi.fd_dict->dv_type->tt_member
+					    : NULL;
+
+	if (member_type != NULL && member_type != &t_any
+		&& check_type_maybe(member_type, fp->uf_func_type, TRUE,
+						    (where_T)WHERE_INIT) == FAIL)
+	{
+	    free_fp = fp_allocated;
+	    goto erret;
+	}
+
+	// dict/entry lock was already checked above (before reading the body),
+	// no need to re-check here.  Store a partial referring to the function
+	// directly, like a lambda does, so that the entry does not depend on
+	// the generated name.
+	partial_T *pt = ALLOC_CLEAR_ONE(partial_T);
+
+	if (pt == NULL)
+	{
+	    free_fp = fp_allocated;
+	    goto erret;
+	}
+	if (fudi.fd_di == NULL)
+	{
+	    fudi.fd_di = dictitem_alloc(fudi.fd_newkey);
+	    if (fudi.fd_di == NULL)
+	    {
+		vim_free(pt);
+		free_fp = fp_allocated;
+		goto erret;
+	    }
+	    if (dict_add(fudi.fd_dict, fudi.fd_di) == FAIL)
+	    {
+		vim_free(fudi.fd_di);
+		vim_free(pt);
+		free_fp = fp_allocated;
+		goto erret;
+	    }
+	}
+	else
+	    clear_tv(&fudi.fd_di->di_tv);
+	pt->pt_func = fp;
+	pt->pt_refcount = 1;
+	fudi.fd_di->di_tv.v_type = VAR_PARTIAL;
+	fudi.fd_di->di_tv.vval.v_partial = pt;
+    }
+
     if (fp_allocated)
     {
 	// insert the new function in the function list
@@ -5748,9 +5866,8 @@ define_function(
 	is_export = FALSE;
     }
 
-    if (eap->cmdidx == CMD_def)
-	set_function_type(fp);
-    else if (fp->uf_script_ctx.sc_version == SCRIPT_VERSION_VIM9)
+    if (eap->cmdidx != CMD_def
+	    && fp->uf_script_ctx.sc_version == SCRIPT_VERSION_VIM9)
 	// :func does not use Vim9 script syntax, even in a Vim9 script file
 	fp->uf_script_ctx.sc_version = SCRIPT_VERSION_MAX;
 
