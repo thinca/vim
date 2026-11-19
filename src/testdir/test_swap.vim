@@ -49,37 +49,64 @@ endfunc
 
 func Test_swap_group()
   CheckUnix
+  CheckExecutable id
+  CheckExecutable ls
+  CheckExecutable chgrp
 
-  let groups = split(system('groups'))
-  if len(groups) <= 1
-    throw 'Skipped: need at least two groups, got ' . string(groups)
-  endif
-
+  let save_directory = &directory
   try
+    set directory=.
     call delete('Xtest')
-    split Xtest
-    call setline(1, 'just some text')
-    wq
-    if system('ls -l Xtest') !~ ' ' . groups[0] . ' \d'
-      throw 'Skipped: test file does not have the first group'
-    else
-      silent !chmod 640 Xtest
-      call system('chgrp ' . groups[1] . ' Xtest')
-      if system('ls -l Xtest') !~ ' ' . groups[1] . ' \d'
-	throw 'Skipped: cannot set second group on test file'
-      else
-	split Xtest
-	let swapname = s:swapname()
-	call assert_match('Xtest', swapname)
-	" Group of swapfile must now match original file.
-	call assert_match(' ' . groups[1] . ' \d', system('ls -l ' . swapname))
+    call writefile(['just some text'], 'Xtest')
 
-	bwipe!
-      endif
+    " The swap file gets the group of the file it belongs to.  Give the file
+    " a group other than the one it got, so that the swap file can be told
+    " apart from a file that just kept the default group.
+    let file_gid = s:GroupOf('Xtest')
+    if file_gid == ''
+      throw 'Skipped: cannot get the group of the test file: '
+            \ .. trim(system('ls -ln ' .. shellescape('Xtest')))
     endif
+    let group_ids = filter(split(system('id -G')), 'v:val =~ "^\\d\\+$"')
+    if v:shell_error != 0 || empty(group_ids)
+      throw 'Skipped: cannot get the list of groups'
+    endif
+    let other_gid = ''
+    for gid in group_ids
+      if gid !=# file_gid
+        call system('chgrp ' .. gid .. ' Xtest')
+        if v:shell_error == 0 && s:GroupOf('Xtest') == gid
+          let other_gid = gid
+          break
+        endif
+      endif
+    endfor
+    if other_gid == ''
+      throw 'Skipped: cannot use a group other than the group of the test file'
+    endif
+    " Vim only gives the swap file the group of the file when the group-read
+    " bit is set and the world-read bit is not.
+    for [perm, expected_gid] in [['rw-r-----', other_gid], ['rw-r--r--', file_gid]]
+      if !setfperm('Xtest', perm) || getfperm('Xtest') !=# perm
+        throw 'Skipped: cannot set the mode of the test file'
+      endif
+      split Xtest
+      let swapname = s:swapname()
+      call assert_match('Xtest\.swp$', swapname)
+      call assert_equal(expected_gid, s:GroupOf(swapname))
+      bwipe!
+    endfor
   finally
+    let &directory = save_directory
     call delete('Xtest')
   endtry
+endfunc
+
+" "ls -ln" prints the user and group numerically, which avoids depending on how
+" the names are resolved.
+func s:GroupOf(fname)
+  let fields = split(system('ls -ln ' .. shellescape(a:fname)))
+  return v:shell_error == 0 && len(fields) > 3 ? fields[3] : ''
 endfunc
 
 func Test_missing_dir()
